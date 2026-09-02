@@ -19,7 +19,9 @@ def load_turns(d):
         if not w: continue
         turns.append(dict(spk=at.get("speaker_label"), words=w, start=sec(w[0]["start_offset"]), end=sec(w[-1]["end_offset"]), text=p["text"]))
     return turns
-def split_turn(t, gap, maxc, minc=8):
+def split_turn(t, gap, maxc, minc=8, gap_hard=1.5, min_nopunct=20):
+    """规则① 停顿两档:>=gap_hard 秒无条件切;gap~gap_hard 之间的停顿只在有标点处切,或当前句已 >=min_nopunct 字
+       规则② 句末标点随句切;规则③ 超过 maxc 字回退到最近逗号切。全程不改说话人标签。"""
     out=[]; cur=[]
     def flush():
         if cur: out.append(dict(spk=t["spk"], start=sec(cur[0]["start_offset"]), end=sec(cur[-1]["end_offset"]), text=join(cur)))
@@ -27,7 +29,9 @@ def split_turn(t, gap, maxc, minc=8):
     for w in t["words"]:
         if cur:
             g=sec(w["start_offset"])-sec(cur[-1]["end_offset"]); n=len(join(cur)); last=cur[-1]["word"].rstrip()[-1:]
-            if (g>=gap and n>=minc) or (last in END and n>=minc) or (last=="." and n>=minc and not is_cjk(last)): flush()
+            punct = last in END or last in CLAUSE or (last=="." and not is_cjk(last))
+            pause_cut = n>=minc and (g>=gap_hard or (g>=gap and (punct or n>=min_nopunct)))
+            if pause_cut or (last in END and n>=minc) or (last=="." and n>=minc and not is_cjk(last)): flush()
             elif n>=maxc:
                 k=max((j for j,x in enumerate(cur) if x["word"].rstrip()[-1:] in CLAUSE|END), default=None)
                 if k is not None and k>=2: tail=cur[k+1:]; del cur[k+1:]; flush(); cur.extend(tail)
